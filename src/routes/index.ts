@@ -11,6 +11,8 @@ import { CommentRoutes } from '../app/modules/comment/comment.route'
 import { MessageRoutes } from '../app/modules/message/message.route'
 import { PostRoutes } from '../app/modules/post/post.route'
 import { ReviewRoutes } from '../app/modules/review/review.route'
+import { ReportRoutes } from '../app/modules/report/report.route'
+import { BlockRoutes } from '../app/modules/block/block.route'
 
 const router = express.Router()
 
@@ -26,7 +28,9 @@ const apiRoutes: { path: string; route: Router }[] = [
   { path: '/comments', route: CommentRoutes },
   { path: '/message', route: MessageRoutes },
   { path: '/post', route: PostRoutes },
-  { path: '/review', route: ReviewRoutes }
+  { path: '/review', route: ReviewRoutes },
+  { path: '/report', route: ReportRoutes },
+  { path: '/block', route: BlockRoutes }
 ]
 
 apiRoutes.forEach(route => {
