@@ -403,11 +403,13 @@ const getMyFreindRequestList = async (user: JwtPayload, paginationOptions: IPagi
   const { page, limit, skip, sortBy, sortOrder } = paginationHelper.calculatePagination(paginationOptions);
   const [requests, total] = await Promise.all([
     Request.find({
-      requestedTo: user.authId
+      requestedTo: user.authId,
+      status: REQUEST_STATUS.PENDING,
+      type: REQUEST_TYPE.FRIEND
     }).populate<{ requestedBy: IUser }>('requestedBy', 'name lastName email profile status').skip(skip)
       .limit(limit)
       .sort({ [sortBy]: sortOrder }).lean(),
-    Request.countDocuments({ requestedTo: user.authId })
+    Request.countDocuments({ requestedTo: user.authId, status: REQUEST_STATUS.PENDING, type: REQUEST_TYPE.FRIEND })
   ])
 
   return {
