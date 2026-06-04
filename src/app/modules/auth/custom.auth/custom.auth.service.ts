@@ -2,6 +2,8 @@ import { StatusCodes } from 'http-status-codes'
 import { User } from '../../user/user.model'
 import { OAuth2Client } from 'google-auth-library'
 import appleSignin from 'apple-signin-auth'
+import jwt from 'jsonwebtoken'
+import admin from 'firebase-admin'
 import { AuthHelper } from '../auth.helper'
 import ApiError from '../../../../errors/ApiError'
 import { USER_ROLES, USER_STATUS } from '../../../../enum/user'
@@ -901,24 +903,42 @@ const changePassword = async (
 }
 
 const googleVerify = async (token: string, fcmToken?: string): Promise<IAuthResponse> => {
-  let payload: any;
+  let googleId: string;
+  let email: string;
+  let name: string;
+  let picture: string;
+
   try {
-    const clientIds = (config.google?.client_id || process.env.GOOGLE_CLIENT_IDS || '').split(',').map(id => id.trim()).filter(Boolean);
-    const client = new OAuth2Client();
-    const ticket = await client.verifyIdToken({
-      idToken: token,
-      audience: clientIds.length > 0 ? clientIds : undefined,
-    });
-    payload = ticket.getPayload();
+    const decodedClaims = jwt.decode(token) as any;
+    if (decodedClaims?.iss?.includes('securetoken.google.com')) {
+      // It's a Firebase ID token
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      googleId = decodedToken.uid;
+      email = decodedToken.email!;
+      name = decodedToken.name || '';
+      picture = decodedToken.picture || '';
+    } else {
+      // It's a Native Google ID token
+      const clientIds = (config.google?.client_id || process.env.GOOGLE_CLIENT_IDS || '').split(',').map(id => id.trim()).filter(Boolean);
+      const client = new OAuth2Client();
+      const ticket = await client.verifyIdToken({
+        idToken: token,
+        audience: clientIds.length > 0 ? clientIds : undefined,
+      });
+      const payload = ticket.getPayload();
+      
+      if (!payload) {
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Google token verification failed - empty payload');
+      }
+      googleId = payload.sub;
+      email = payload.email!;
+      name = payload.name || '';
+      picture = payload.picture || '';
+    }
   } catch (error: any) {
     throw new ApiError(StatusCodes.UNAUTHORIZED, `Google verification failed: ${error?.message || error}`);
   }
 
-  if (!payload) {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Google token verification failed - empty payload');
-  }
-
-  const { sub: googleId, email, name, picture } = payload;
   if (!email) {
     throw new ApiError(StatusCodes.BAD_REQUEST, 'Google token did not contain an email address');
   }
@@ -978,21 +998,32 @@ const googleVerify = async (token: string, fcmToken?: string): Promise<IAuthResp
 };
 
 const appleVerify = async (token: string, name?: string, fcmToken?: string): Promise<IAuthResponse> => {
-  let payload: any;
+  let appleId: string;
+  let email: string;
+
   try {
-    const bundleId = process.env.APPLE_BUNDLE_ID || 'com.yourcompany.yourapp';
-    payload = await appleSignin.verifyIdToken(token, {
-      audience: bundleId,
-    });
+    const decodedClaims = jwt.decode(token) as any;
+    if (decodedClaims?.iss?.includes('securetoken.google.com')) {
+      // It's a Firebase ID token
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      appleId = decodedToken.uid;
+      email = decodedToken.email!;
+    } else {
+      // It's a Native Apple ID token
+      const bundleId = process.env.APPLE_BUNDLE_ID || 'com.yourcompany.yourapp';
+      const payload = await appleSignin.verifyIdToken(token, {
+        audience: bundleId,
+      });
+      if (!payload) {
+        throw new ApiError(StatusCodes.UNAUTHORIZED, 'Apple token verification failed - empty payload');
+      }
+      appleId = payload.sub;
+      email = payload.email!;
+    }
   } catch (error: any) {
     throw new ApiError(StatusCodes.UNAUTHORIZED, `Apple verification failed: ${error?.message || error}`);
   }
 
-  if (!payload) {
-    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Apple token verification failed - empty payload');
-  }
-
-  const { sub: appleId, email } = payload;
   const userEmail = email || `${appleId}@apple.com`;
   const sanitizedEmail = getSanitizeEmail(userEmail);
 
