@@ -22,6 +22,7 @@ const updateUserZodSchema = z.object({
     latitude: z.number().optional(),
     profilePicture: z.string().optional(),
     image: z.string().optional(),
+    fcmToken: z.string().optional().nullable(),
   }),
 })
 

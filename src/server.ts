@@ -16,7 +16,7 @@ process.on('uncaughtException', error => {
   process.exit(1)
 })
 
-export const onlineUsers = new Map()
+import { onlineUsers } from './shared/onlineUsers'
 let server: any
 async function main() {
   try {

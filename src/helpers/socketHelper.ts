@@ -1,7 +1,7 @@
 import colors from 'colors'
 import { Server, Socket } from 'socket.io'
 import { logger } from '../shared/logger'
-import { onlineUsers } from '../server'
+import { onlineUsers } from '../shared/onlineUsers'
 import { Notification } from '../app/modules/notifications/notifications.model'
 import { USER_ROLES } from '../enum/user'
 import { JwtPayload } from 'jsonwebtoken'

@@ -4,6 +4,7 @@ import { logger } from '../shared/logger'
 import { socket } from '../utils/socket'
 import { sendPushNotification } from './pushnotificationHelper'
 import { emitEvent } from './socketInstances'
+import { User } from '../app/modules/user/user.model'
 
 export const sendNotification = async (
   from: {
@@ -56,8 +57,19 @@ export const sendNotification = async (
 
     emitEvent(`notification::${to}`, socketResponse)
 
-    if (fcmToken) {
-      await sendPushNotification(fcmToken, title, body, { from: from.authId, to })
+    let recipientFcmToken = fcmToken
+    if (!recipientFcmToken) {
+      const recipient = await User.findById(to).select('+fcmToken').lean()
+      recipientFcmToken = recipient?.fcmToken
+    }
+
+    if (recipientFcmToken) {
+      await sendPushNotification(recipientFcmToken, title, body, {
+        from: from.authId,
+        to,
+        ...(friendRequestId && { friendRequestId }),
+        ...(planJoiningRequestId && { planJoiningRequestId }),
+      })
     }
   } catch (err) {
     //@ts-ignore

@@ -8,6 +8,7 @@ import { Types } from 'mongoose';
 import removeFile from '../../../helpers/image/remove';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { User } from '../user/user.model';
+import { sendNotification } from '../../../helpers/notificationHelper';
 
 
 
@@ -156,6 +157,32 @@ const updatePlan = async (
     );
   }
 
+  // Send push notification to other plan collaborators
+  try {
+    const creatorId = result.createdBy._id.toString();
+    const creatorName = (result.createdBy as any).name || 'Organizer';
+    const creatorProfile = (result.createdBy as any).profile || '';
+
+    const otherCollaborators = result.collaborators.filter(
+      (collab: any) => collab._id.toString() !== creatorId
+    );
+
+    for (const collaborator of otherCollaborators) {
+      await sendNotification(
+        {
+          authId: creatorId,
+          name: creatorName,
+          profile: creatorProfile,
+        },
+        collaborator._id.toString(),
+        'Plan Updated 📅',
+        `The details for plan "${result.title}" have been updated.`
+      );
+    }
+  } catch (err) {
+    console.error('Error sending plan update notifications:', err);
+  }
+
   return result;
 };
 
@@ -219,6 +246,26 @@ const addPlanCollaborator = async (planId: string, userId: string, requesterId: 
     await session.commitTransaction();
     session.endSession();
 
+    // Notify the added collaborator
+    try {
+      const requesterUser = await User.findById(requesterId).lean();
+      const requesterName = requesterUser ? requesterUser.name : 'Organizer';
+      const requesterProfile = requesterUser ? requesterUser.profile : '';
+
+      await sendNotification(
+        {
+          authId: requesterId,
+          name: requesterName,
+          profile: requesterProfile,
+        },
+        userId,
+        'Added to Plan 📅',
+        `${requesterName} added you to the plan: "${result.title}"`
+      );
+    } catch (err) {
+      console.error('Error sending add collaborator notification:', err);
+    }
+
     return result;
   } catch (error) {
     await session.abortTransaction();
@@ -264,6 +311,26 @@ const removePlanCollaborator = async (planId: string, userId: string, requesterI
 
     await session.commitTransaction();
     session.endSession();
+
+    // Notify the removed collaborator
+    try {
+      const requesterUser = await User.findById(requesterId).lean();
+      const requesterName = requesterUser ? requesterUser.name : 'Organizer';
+      const requesterProfile = requesterUser ? requesterUser.profile : '';
+
+      await sendNotification(
+        {
+          authId: requesterId,
+          name: requesterName,
+          profile: requesterProfile,
+        },
+        userId,
+        'Removed from Plan 📅',
+        `${requesterName} removed you from the plan: "${result.title}"`
+      );
+    } catch (err) {
+      console.error('Error sending remove collaborator notification:', err);
+    }
 
     return result;
   } catch (error) {

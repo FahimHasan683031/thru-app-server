@@ -10,6 +10,9 @@ import { emitEvent } from '../../../helpers/socketInstances';
 import QueryBuilder from '../../builder/QueryBuilder';
 import { Plan } from '../plan/plan.model';
 import { messageSearchableFields } from './message.constants';
+import { User } from '../user/user.model';
+import { sendPushNotification, sendMulticastPushNotification } from '../../../helpers/pushnotificationHelper';
+import { onlineUsers } from '../../../shared/onlineUsers';
 
 const sendMessage = async (
     user: JwtPayload,
@@ -72,6 +75,30 @@ const sendMessage = async (
 
     emitEvent(`message::${message.friend}`, returnableMessage);
 
+    // Send push notification for Direct Message if receiver is offline
+    const isReceiverOnline = Array.from(onlineUsers.values()).includes(receiver._id.toString());
+    if (!isReceiverOnline) {
+        try {
+            const recipient = await User.findById(receiver._id).select('+fcmToken').lean();
+            if (recipient?.fcmToken) {
+                const senderName = sender?.name || 'A user';
+                const notificationBody = message.message || 'Sent an image';
+                await sendPushNotification(
+                    recipient.fcmToken,
+                    `Message from ${senderName}`,
+                    notificationBody,
+                    {
+                        type: 'chat',
+                        friendId: friendId,
+                        senderId: user.authId
+                    }
+                );
+            }
+        } catch (err) {
+            console.error('Error sending DM push notification:', err);
+        }
+    }
+
     return returnableMessage;
 };
 
@@ -127,7 +154,7 @@ const sendGroupMessage = async (
     const userId = new Types.ObjectId(user.authId);
     const planObjectId = new Types.ObjectId(planId);
 
-    const plan = await Plan.findById(planObjectId).select('createdBy collaborators');
+    const plan = await Plan.findById(planObjectId).select('title createdBy collaborators');
 
     if (!plan) {
         throw new ApiError(StatusCodes.NOT_FOUND, 'Plan not found');
@@ -167,6 +194,44 @@ const sendGroupMessage = async (
     };
 
     emitEvent(`message::${planId}`, returnableMessage);
+
+    // Send multicast push notifications to other plan participants who are offline
+    try {
+        const participantsIds = [plan.createdBy, ...plan.collaborators].filter(
+            id => id.toString() !== user.authId.toString()
+        );
+
+        if (participantsIds.length > 0) {
+            // Filter out participants who are currently online
+            const offlineParticipantsIds = participantsIds.filter(
+                id => !Array.from(onlineUsers.values()).includes(id.toString())
+            );
+
+            if (offlineParticipantsIds.length > 0) {
+                const recipients = await User.find({
+                    _id: { $in: offlineParticipantsIds }
+                }).select('+fcmToken').lean();
+
+                const fcmTokens = recipients.map(r => r.fcmToken).filter(Boolean) as string[];
+                if (fcmTokens.length > 0) {
+                    const senderName = populatedMessage?.sender.name || 'Someone';
+                    const notificationBody = message.message || 'Sent an image';
+                    await sendMulticastPushNotification(
+                        fcmTokens,
+                        `Group chat: ${plan.title || 'Plan'}`,
+                        `${senderName}: ${notificationBody}`,
+                        {
+                            type: 'group_chat',
+                            planId: planId,
+                            senderId: user.authId
+                        }
+                    );
+                }
+            }
+        }
+    } catch (err) {
+        console.error('Error sending group push notifications:', err);
+    }
 
     return returnableMessage;
 };
