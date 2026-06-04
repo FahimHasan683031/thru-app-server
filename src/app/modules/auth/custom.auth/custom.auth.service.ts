@@ -1,5 +1,7 @@
 import { StatusCodes } from 'http-status-codes'
 import { User } from '../../user/user.model'
+import { OAuth2Client } from 'google-auth-library'
+import appleSignin from 'apple-signin-auth'
 import { AuthHelper } from '../auth.helper'
 import ApiError from '../../../../errors/ApiError'
 import { USER_ROLES, USER_STATUS } from '../../../../enum/user'
@@ -898,6 +900,153 @@ const changePassword = async (
   }
 }
 
+const googleVerify = async (token: string, fcmToken?: string): Promise<IAuthResponse> => {
+  let payload: any;
+  try {
+    const clientIds = (config.google?.client_id || process.env.GOOGLE_CLIENT_IDS || '').split(',').map(id => id.trim()).filter(Boolean);
+    const client = new OAuth2Client();
+    const ticket = await client.verifyIdToken({
+      idToken: token,
+      audience: clientIds.length > 0 ? clientIds : undefined,
+    });
+    payload = ticket.getPayload();
+  } catch (error: any) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, `Google verification failed: ${error?.message || error}`);
+  }
+
+  if (!payload) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Google token verification failed - empty payload');
+  }
+
+  const { sub: googleId, email, name, picture } = payload;
+  if (!email) {
+    throw new ApiError(StatusCodes.BAD_REQUEST, 'Google token did not contain an email address');
+  }
+
+  const sanitizedEmail = getSanitizeEmail(email);
+
+  let user = await User.findOne({
+    $or: [{ email: sanitizedEmail }, { appId: googleId }],
+    status: { $ne: USER_STATUS.DELETED },
+  });
+
+  if (!user) {
+    const nameParts = (name || '').split(' ');
+    const firstName = nameParts[0] || 'User';
+    const lastName = nameParts.slice(1).join(' ') || '';
+
+    user = await User.create({
+      email: sanitizedEmail,
+      name: firstName,
+      lastName,
+      appId: googleId,
+      profile: picture || '',
+      verified: true,
+      status: USER_STATUS.ACTIVE,
+      role: USER_ROLES.USER,
+      fcmToken,
+      password: cryptoToken(),
+    });
+
+    if (!user) {
+      throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Failed to register user via Google sign-in');
+    }
+  } else {
+    const updateData: any = { status: USER_STATUS.ACTIVE };
+    if (fcmToken) {
+      updateData.fcmToken = fcmToken;
+    }
+    user = await User.findByIdAndUpdate(user._id, { $set: updateData }, { new: true });
+  }
+
+  if (!user) {
+    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'User not found or failed to update');
+  }
+
+  const tokens = AuthHelper.createToken(
+    user._id,
+    user.role,
+    user.name || '',
+    user.email,
+  );
+
+  return authResponse(StatusCodes.OK, `Logged in successfully as ${user.name}`, {
+    role: user.role,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+  });
+};
+
+const appleVerify = async (token: string, name?: string, fcmToken?: string): Promise<IAuthResponse> => {
+  let payload: any;
+  try {
+    const bundleId = process.env.APPLE_BUNDLE_ID || 'com.yourcompany.yourapp';
+    payload = await appleSignin.verifyIdToken(token, {
+      audience: bundleId,
+    });
+  } catch (error: any) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, `Apple verification failed: ${error?.message || error}`);
+  }
+
+  if (!payload) {
+    throw new ApiError(StatusCodes.UNAUTHORIZED, 'Apple token verification failed - empty payload');
+  }
+
+  const { sub: appleId, email } = payload;
+  const userEmail = email || `${appleId}@apple.com`;
+  const sanitizedEmail = getSanitizeEmail(userEmail);
+
+  let user = await User.findOne({
+    $or: [{ email: sanitizedEmail }, { appId: appleId }],
+    status: { $ne: USER_STATUS.DELETED },
+  });
+
+  if (!user) {
+    const nameParts = (name || '').split(' ');
+    const firstName = nameParts[0] || 'Apple';
+    const lastName = nameParts.slice(1).join(' ') || 'User';
+
+    user = await User.create({
+      email: sanitizedEmail,
+      name: firstName,
+      lastName,
+      appId: appleId,
+      verified: true,
+      status: USER_STATUS.ACTIVE,
+      role: USER_ROLES.USER,
+      fcmToken,
+      password: cryptoToken(),
+    });
+
+    if (!user) {
+      throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'Failed to register user via Apple sign-in');
+    }
+  } else {
+    const updateData: any = { status: USER_STATUS.ACTIVE };
+    if (fcmToken) {
+      updateData.fcmToken = fcmToken;
+    }
+    user = await User.findByIdAndUpdate(user._id, { $set: updateData }, { new: true });
+  }
+
+  if (!user) {
+    throw new ApiError(StatusCodes.INTERNAL_SERVER_ERROR, 'User not found or failed to update');
+  }
+
+  const tokens = AuthHelper.createToken(
+    user._id,
+    user.role,
+    user.name || '',
+    user.email,
+  );
+
+  return authResponse(StatusCodes.OK, `Logged in successfully as ${user.name}`, {
+    role: user.role,
+    accessToken: tokens.accessToken,
+    refreshToken: tokens.refreshToken,
+  });
+};
+
 export const CustomAuthServices = {
   adminLogin,
   forgetPassword,
@@ -910,4 +1059,6 @@ export const CustomAuthServices = {
   resendOtp,
   changePassword,
   createUser,
+  googleVerify,
+  appleVerify,
 }

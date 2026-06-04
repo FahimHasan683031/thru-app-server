@@ -157,6 +157,49 @@ const socialLogin = catchAsync(async (req: Request, res: Response) => {
     data: { accessToken, refreshToken, role },
   })
 })
+
+const googleVerify = catchAsync(async (req: Request, res: Response) => {
+  const { token, fcmToken } = req.body
+  const result = await CustomAuthServices.googleVerify(token, fcmToken)
+  const { status, message, accessToken, refreshToken, role } = result
+
+  if (refreshToken) {
+    res.cookie('refreshToken', refreshToken, {
+      secure: config.node_env === 'production',
+      httpOnly: true,
+      sameSite: 'strict',
+    })
+  }
+
+  sendResponse(res, {
+    statusCode: status,
+    success: true,
+    message: message,
+    data: { accessToken, role },
+  })
+})
+
+const appleVerify = catchAsync(async (req: Request, res: Response) => {
+  const { token, fcmToken, name } = req.body
+  const result = await CustomAuthServices.appleVerify(token, name, fcmToken)
+  const { status, message, accessToken, refreshToken, role } = result
+
+  if (refreshToken) {
+    res.cookie('refreshToken', refreshToken, {
+      secure: config.node_env === 'production',
+      httpOnly: true,
+      sameSite: 'strict',
+    })
+  }
+
+  sendResponse(res, {
+    statusCode: status,
+    success: true,
+    message: message,
+    data: { accessToken, role },
+  })
+})
+
 export const CustomAuthController = {
   forgetPassword,
   resetPassword,
@@ -169,4 +212,6 @@ export const CustomAuthController = {
   deleteAccount,
   adminLogin,
   socialLogin,
+  googleVerify,
+  appleVerify,
 }

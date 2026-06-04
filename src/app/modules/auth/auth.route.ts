@@ -79,4 +79,16 @@ router.post('/refresh-token', CustomAuthController.getRefreshToken)
 
 router.post('/social-login', validateRequest(AuthValidations.socialLoginZodSchema), CustomAuthController.socialLogin)
 
+router.post(
+  '/google-verify',
+  validateRequest(AuthValidations.googleVerifyZodSchema),
+  CustomAuthController.googleVerify,
+)
+
+router.post(
+  '/apple-verify',
+  validateRequest(AuthValidations.appleVerifyZodSchema),
+  CustomAuthController.appleVerify,
+)
+
 export const AuthRoutes = router

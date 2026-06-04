@@ -128,6 +128,21 @@ const socialLoginZodSchema = z.object({
   }),
 })
 
+const googleVerifyZodSchema = z.object({
+  body: z.object({
+    token: z.string({ required_error: 'Token is required' }),
+    fcmToken: z.string().optional(),
+  }).strict(),
+})
+
+const appleVerifyZodSchema = z.object({
+  body: z.object({
+    token: z.string({ required_error: 'Token is required' }),
+    fcmToken: z.string().optional(),
+    name: z.string().optional(),
+  }).strict(),
+})
+
 export const AuthValidations = {
   verifyAccountZodSchema,
   forgetPasswordZodSchema,
@@ -138,4 +153,6 @@ export const AuthValidations = {
   createUserZodSchema,
   deleteAccount,
   socialLoginZodSchema,
+  googleVerifyZodSchema,
+  appleVerifyZodSchema,
 }
