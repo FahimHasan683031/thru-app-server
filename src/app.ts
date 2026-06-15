@@ -31,7 +31,7 @@ app.use(express.static('public', { extensions: ['html'] }))
 //router
 app.use('/api/v1', router)
 
-//live response
+//Roote response
 app.get('/', (req: Request, res: Response) => {
   res.send(`
     <div style="
